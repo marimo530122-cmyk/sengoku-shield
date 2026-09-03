@@ -81,6 +81,15 @@ export async function finishCall(callSid: string, status: "completed" | "killed"
   await kv.set(callKey(callSid), record);
 }
 
+// Module 1拡張: 会話中に危険度スコアが閾値を超えたとき、この通話を
+// ブラックリスト扱いに格上げする（lib/scam-pattern-detector.ts）
+export async function markBlacklisted(callSid: string): Promise<void> {
+  const record = await getCall(callSid);
+  if (!record) return;
+  record.blacklisted = true;
+  await kv.set(callKey(callSid), record);
+}
+
 export async function requestKill(callSid: string): Promise<void> {
   const record = await getCall(callSid);
   if (!record) return;

@@ -10,7 +10,7 @@ import { verifyTwilioRequest, parseTwilioForm } from "@/lib/twilio-verify";
 import { isBlacklisted } from "@/lib/blacklist";
 import { isWhitelisted } from "@/lib/whitelist";
 import { createCall, finishCall } from "@/lib/call-store";
-import { PRELUDE_MESSAGE } from "@/lib/honeypot-prompt";
+import { PRELUDE_MESSAGE, BLACKLIST_WARNING_LINE } from "@/lib/honeypot-prompt";
 import { xmlResponse, say, gatherSpeech, hangup } from "@/lib/twiml";
 
 export async function POST(req: NextRequest) {
@@ -55,5 +55,12 @@ export async function POST(req: NextRequest) {
   }
 
   const actionUrl = new URL("/api/voice/turn", req.url).toString();
-  return xmlResponse(gatherSpeech(actionUrl, say(PRELUDE_MESSAGE)));
+
+  // Module 13代替: 既知のブロックリスト番号にだけ、低め・落ち着いたトーンで
+  // 冒頭に事実ベースの警告を追加する（特定機関へのなりすましはしない）
+  const prelude = blacklisted
+    ? say(`${PRELUDE_MESSAGE} ${BLACKLIST_WARNING_LINE}`, "Polly.Takumi", { authoritative: true })
+    : say(PRELUDE_MESSAGE);
+
+  return xmlResponse(gatherSpeech(actionUrl, prelude));
 }

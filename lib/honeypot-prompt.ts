@@ -75,3 +75,13 @@ ${SHARED_SAFETY_RULES}`;
 
 export const PRELUDE_MESSAGE =
   "こちらはセキュリティAI自動応答システムです。通話は記録され、必要に応じて内容を確認する場合があります。ご用件をどうぞ。";
+
+// Module 13代替: ブロックリスト一致番号にだけ追加で流す、事実の範囲にとどめた警告文。
+// 「あなたは詐欺師だ」等の断定はせず、あくまで「この番号は記録されている」という
+// 事実だけを伝える（lib/twiml.tsのauthoritativeトーンと組み合わせて使う）
+export const BLACKLIST_WARNING_LINE = "この電話番号は、迷惑電話として当システムに記録されています。";
+
+// Module 1拡張: 会話中に詐欺パターンで危険度が閾値を超え、その場でブロックリスト
+// 格上げされたときに一度だけ流す警告文（app/api/voice/turn/route.ts参照）
+export const SCAM_ESCALATION_WARNING_LINE =
+  "念のためお伝えします。この通話は、特殊詐欺で多く見られる話し方のパターンとして記録を強化いたしました。";

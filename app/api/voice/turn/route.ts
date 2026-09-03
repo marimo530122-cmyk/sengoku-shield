@@ -8,9 +8,11 @@
 
 import { NextRequest } from "next/server";
 import { verifyTwilioRequest, parseTwilioForm } from "@/lib/twilio-verify";
-import { getCall, appendTurn, finishCall } from "@/lib/call-store";
-import { buildHoneypotPrompt } from "@/lib/honeypot-prompt";
+import { getCall, appendTurn, finishCall, markBlacklisted } from "@/lib/call-store";
+import { buildHoneypotPrompt, SCAM_ESCALATION_WARNING_LINE } from "@/lib/honeypot-prompt";
 import { isRecentTurnAngry } from "@/lib/tone-detector";
+import { scoreScamRisk, SCAM_RISK_AUTO_BLACKLIST_THRESHOLD } from "@/lib/scam-pattern-detector";
+import { addToBlacklist } from "@/lib/blacklist";
 import { generateReply } from "@/lib/claude";
 import { xmlResponse, say, gatherSpeech, hangup } from "@/lib/twiml";
 
@@ -62,9 +64,23 @@ export async function POST(req: NextRequest) {
     return xmlResponse(say("お時間になりましたので、これで失礼いたします。") + hangup());
   }
 
+  // Module 1拡張: 発言内容から特殊詐欺の危険度をリアルタイム判定し、閾値を
+  // 超えたらこの通話をその場でブロックリスト格上げする(以降の着信も対象になる)
+  let justEscalated = false;
+  let effectiveBlacklisted = record.blacklisted;
+  if (!effectiveBlacklisted) {
+    const risk = scoreScamRisk(record.turns);
+    if (risk.score >= SCAM_RISK_AUTO_BLACKLIST_THRESHOLD) {
+      await addToBlacklist(record.from);
+      await markBlacklisted(callSid);
+      effectiveBlacklisted = true;
+      justEscalated = true;
+    }
+  }
+
   // Module 12: ブロックリスト一致の通話でだけ、相手が攻撃的になったら
   // リバースメンタルケア口調に動的切り替え（screeningモードには適用しない）
-  const mode = record.blacklisted ? (isRecentTurnAngry(record.turns) ? "honeypot_reverse_care" : "honeypot") : "screening";
+  const mode = effectiveBlacklisted ? (isRecentTurnAngry(record.turns) ? "honeypot_reverse_care" : "honeypot") : "screening";
   const systemPrompt = buildHoneypotPrompt(mode);
 
   let reply: string;
@@ -76,5 +92,11 @@ export async function POST(req: NextRequest) {
 
   await appendTurn(callSid, "ai", reply);
 
-  return xmlResponse(gatherSpeech(actionUrl, say(reply)));
+  // Module 13代替: 格上げが起きた最初のターンだけ、低め・落ち着いたトーンで
+  // 事実ベースの一言を先に流してから、通常の応答に続ける
+  const escalationNotice = justEscalated
+    ? say(SCAM_ESCALATION_WARNING_LINE, "Polly.Takumi", { authoritative: true })
+    : "";
+
+  return xmlResponse(gatherSpeech(actionUrl, escalationNotice + say(reply)));
 }

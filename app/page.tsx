@@ -21,6 +21,7 @@ type CallRecord = {
   killRequested: boolean;
 };
 type CommitmentFlag = { at: number; text: string; kind: "date" | "money" | "pressure" };
+type ScamRisk = { score: number; matched: { category: string; text: string }[] };
 
 const ANGRY_KEYWORDS_DISPLAY = [
   "ふざけるな", "うるさい", "舐めてんのか", "何度言わせる", "殺す", "馬鹿にし",
@@ -58,6 +59,7 @@ export default function Dashboard() {
   const [whitelist, setWhitelist] = useState<string[]>([]);
   const [callerCommitments, setCallerCommitments] = useState<CommitmentFlag[] | null>(null);
   const [aiWarnings, setAiWarnings] = useState<CommitmentFlag[] | null>(null);
+  const [scamRisk, setScamRisk] = useState<ScamRisk | null>(null);
 
   const refreshCalls = useCallback(async () => {
     const res = await fetch("/api/calls");
@@ -186,6 +188,7 @@ export default function Dashboard() {
     const data = await res.json();
     setCallerCommitments(data.callerCommitments || []);
     setAiWarnings(data.aiWarnings || []);
+    setScamRisk(data.scamRisk || null);
   }
 
   return (
@@ -209,6 +212,7 @@ export default function Dashboard() {
                   setCopyStep("idle");
                   setCallerCommitments(null);
                   setAiWarnings(null);
+                  setScamRisk(null);
                 }}
                 className={`w-full text-left px-3 py-2 rounded text-xs border ${
                   selectedSid === c.callSid ? "border-[#5b8def] bg-[#111621]" : "border-[#1c2028] hover:bg-[#111621]"
@@ -317,6 +321,12 @@ export default function Dashboard() {
                 <button onClick={handleLegalDraft} className="text-xs px-3 py-1.5 border border-[#1c2028] rounded hover:bg-[#111621]">
                   法的メモを作成
                 </button>
+                <a
+                  href={`/api/calls/${selectedSid}/legal-draft/pdf`}
+                  className="text-xs px-3 py-1.5 border border-[#1c2028] rounded hover:bg-[#111621] inline-block"
+                >
+                  証拠PDFをダウンロード
+                </a>
                 <button onClick={handleCommitments} className="text-xs px-3 py-1.5 border border-[#1c2028] rounded hover:bg-[#111621]">
                   条件・注意点をチェック
                 </button>
@@ -330,6 +340,20 @@ export default function Dashboard() {
 
               {(callerCommitments || aiWarnings) && (
                 <div className="border border-[#1c2028] rounded p-4 mb-4 text-xs space-y-3">
+                  {scamRisk && (
+                    <div>
+                      <p className="text-[#8a8f99] mb-1">特殊詐欺パターン危険度（Module 1拡張・目安）</p>
+                      <p className={scamRisk.score >= 60 ? "text-red-400" : scamRisk.score >= 30 ? "text-yellow-400" : "text-[#e4e7ec]"}>
+                        {scamRisk.score} / 100
+                        {scamRisk.matched.length > 0 && (
+                          <span className="text-[#6a6f79]">
+                            {" "}
+                            （検出: {[...new Set(scamRisk.matched.map((m) => m.category))].join("、")}）
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-[#8a8f99] mb-1">相手が提示した期限・金額（Module 5）</p>
                     {!callerCommitments || callerCommitments.length === 0 ? (

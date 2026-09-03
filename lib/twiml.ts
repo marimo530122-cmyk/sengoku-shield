@@ -20,8 +20,19 @@ export function xmlResponse(body: string): Response {
   });
 }
 
-export function say(text: string, voice: "Polly.Mizuki" | "Polly.Takumi" = "Polly.Mizuki"): string {
-  return `<Say language="ja-JP" voice="${voice}">${escapeXml(text)}</Say>`;
+// Module 13代替: 「威厳のある声」はプロソディ（ピッチ・速度）の調整だけで実現する。
+// ⚠️ 正直な設計方針: 特定の実在機関（警察・官公庁等）を名乗らせることは、
+// 相手が詐欺師であっても身分詐称・脅迫隣接のリスクがあるため行わない
+// （honeypot-prompt.tsのSHARED_SAFETY_RULES参照）。ここでの「威圧感」は
+// あくまで声のトーンだけにとどめ、話す内容は事実の範囲を超えない
+export function say(
+  text: string,
+  voice: "Polly.Mizuki" | "Polly.Takumi" = "Polly.Mizuki",
+  options?: { authoritative?: boolean }
+): string {
+  const escaped = escapeXml(text);
+  const inner = options?.authoritative ? `<prosody pitch="-15%" rate="92%">${escaped}</prosody>` : escaped;
+  return `<Say language="ja-JP" voice="${voice}">${inner}</Say>`;
 }
 
 // 次の発話を音声認識つきで待つ（おとりAIの会話ループの中核）
