@@ -14,11 +14,24 @@ type CallRecord = {
   to: string;
   status: "in-progress" | "completed" | "killed";
   blacklisted: boolean;
+  whitelisted: boolean;
   startedAt: number;
   endedAt: number | null;
   turns: Turn[];
   killRequested: boolean;
 };
+type CommitmentFlag = { at: number; text: string; kind: "date" | "money" | "pressure" };
+
+const ANGRY_KEYWORDS_DISPLAY = [
+  "ふざけるな", "うるさい", "舐めてんのか", "何度言わせる", "殺す", "馬鹿にし",
+  "いい加減にしろ", "こら", "てめえ", "早くしろ", "怒鳴", "訴えるぞ",
+];
+function currentModeLabel(record: CallRecord): string {
+  if (!record.blacklisted) return "📋 スクリーニング中";
+  const lastCaller = [...record.turns].reverse().find((t) => t.role === "caller");
+  const angry = lastCaller && ANGRY_KEYWORDS_DISPLAY.some((kw) => lastCaller.text.includes(kw));
+  return angry ? "🔥 リバースメンタルケア中" : "🎣 ハニーポット中";
+}
 
 function fmtTime(ms: number) {
   return new Date(ms).toLocaleString("ja-JP");
@@ -41,6 +54,10 @@ export default function Dashboard() {
   const [copyStep, setCopyStep] = useState<"idle" | "copied">("idle");
   const [blacklistInput, setBlacklistInput] = useState("");
   const [blacklist, setBlacklist] = useState<string[]>([]);
+  const [whitelistInput, setWhitelistInput] = useState("");
+  const [whitelist, setWhitelist] = useState<string[]>([]);
+  const [callerCommitments, setCallerCommitments] = useState<CommitmentFlag[] | null>(null);
+  const [aiWarnings, setAiWarnings] = useState<CommitmentFlag[] | null>(null);
 
   const refreshCalls = useCallback(async () => {
     const res = await fetch("/api/calls");
@@ -64,14 +81,22 @@ export default function Dashboard() {
     setBlacklist(data.numbers || []);
   }, []);
 
+  const refreshWhitelist = useCallback(async () => {
+    const res = await fetch("/api/whitelist");
+    if (!res.ok) return;
+    const data = await res.json();
+    setWhitelist(data.numbers || []);
+  }, []);
+
   // ポーリングでサーバーの最新状態を取り込む（意図的にeffect内でfetch→setStateしている）
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     refreshCalls();
     refreshBlacklist();
+    refreshWhitelist();
     const interval = setInterval(refreshCalls, 4000);
     return () => clearInterval(interval);
-  }, [refreshCalls, refreshBlacklist]);
+  }, [refreshCalls, refreshBlacklist, refreshWhitelist]);
 
   useEffect(() => {
     if (!selectedSid) return;
@@ -133,6 +158,36 @@ export default function Dashboard() {
     refreshBlacklist();
   }
 
+  async function addWhitelistNumber() {
+    const number = whitelistInput.trim();
+    if (!number) return;
+    await fetch("/api/whitelist", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ number }),
+    });
+    setWhitelistInput("");
+    refreshWhitelist();
+  }
+
+  async function removeWhitelistNumber(number: string) {
+    await fetch("/api/whitelist", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ number }),
+    });
+    refreshWhitelist();
+  }
+
+  async function handleCommitments() {
+    if (!selectedSid) return;
+    const res = await fetch(`/api/calls/${selectedSid}/commitments`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setCallerCommitments(data.callerCommitments || []);
+    setAiWarnings(data.aiWarnings || []);
+  }
+
   return (
     <main className="flex-1 max-w-5xl w-full mx-auto px-5 py-8">
       <h1 className="text-lg font-bold mb-1">SENGOKU-SHIELD</h1>
@@ -152,6 +207,8 @@ export default function Dashboard() {
                   setLegalDraft(null);
                   setSnsOpen(false);
                   setCopyStep("idle");
+                  setCallerCommitments(null);
+                  setAiWarnings(null);
                 }}
                 className={`w-full text-left px-3 py-2 rounded text-xs border ${
                   selectedSid === c.callSid ? "border-[#5b8def] bg-[#111621]" : "border-[#1c2028] hover:bg-[#111621]"
@@ -190,6 +247,29 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          <h2 className="text-xs text-[#8a8f99] mt-8 mb-2">ホワイトリスト（安全な番号）</h2>
+          <div className="flex gap-1 mb-2">
+            <input
+              value={whitelistInput}
+              onChange={(e) => setWhitelistInput(e.target.value)}
+              placeholder="+819012345678"
+              className="flex-1 bg-[#111621] border border-[#1c2028] rounded px-2 py-1 text-xs outline-none"
+            />
+            <button onClick={addWhitelistNumber} className="text-xs px-2 py-1 border border-[#1c2028] rounded hover:bg-[#111621]">
+              追加
+            </button>
+          </div>
+          <div className="space-y-1">
+            {whitelist.map((n) => (
+              <div key={n} className="flex items-center justify-between text-xs font-mono text-[#8a8f99]">
+                <span>{n}</span>
+                <button onClick={() => removeWhitelistNumber(n)} className="text-[10px] text-[#6a6f79] hover:text-red-400">
+                  削除
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* 詳細 */}
@@ -204,6 +284,9 @@ export default function Dashboard() {
                   <div className="text-[10px] text-[#6a6f79]">
                     {fmtTime(selected.startedAt)} ・ 経過 {fmtDuration(selected)} ・ {selected.status}
                   </div>
+                  {selected.status === "in-progress" && (
+                    <div className="text-[10px] text-[#5b8def] mt-1">{currentModeLabel(selected)}</div>
+                  )}
                 </div>
                 {selected.status === "in-progress" && (
                   <button
@@ -230,9 +313,12 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
                 <button onClick={handleLegalDraft} className="text-xs px-3 py-1.5 border border-[#1c2028] rounded hover:bg-[#111621]">
                   法的メモを作成
+                </button>
+                <button onClick={handleCommitments} className="text-xs px-3 py-1.5 border border-[#1c2028] rounded hover:bg-[#111621]">
+                  条件・注意点をチェック
                 </button>
                 <button
                   onClick={() => setSnsOpen((v) => !v)}
@@ -241,6 +327,39 @@ export default function Dashboard() {
                   🚨 撃退レポートをSNSで晒す準備
                 </button>
               </div>
+
+              {(callerCommitments || aiWarnings) && (
+                <div className="border border-[#1c2028] rounded p-4 mb-4 text-xs space-y-3">
+                  <div>
+                    <p className="text-[#8a8f99] mb-1">相手が提示した期限・金額（Module 5）</p>
+                    {!callerCommitments || callerCommitments.length === 0 ? (
+                      <p className="text-[#5a5f69]">検出なし</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {callerCommitments.map((c, i) => (
+                          <li key={i} className="text-[#e4e7ec]">
+                            [{c.kind}] {c.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[#8a8f99] mb-1">⚠️ AIが同意したような発言（要確認・Module 11代替）</p>
+                    {!aiWarnings || aiWarnings.length === 0 ? (
+                      <p className="text-[#5a5f69]">検出なし</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {aiWarnings.map((c, i) => (
+                          <li key={i} className="text-red-400">
+                            {c.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {legalDraft && (
                 <div className="mb-4">

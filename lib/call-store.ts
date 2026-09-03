@@ -22,6 +22,7 @@ export type CallRecord = {
   to: string;
   status: "in-progress" | "completed" | "killed";
   blacklisted: boolean;
+  whitelisted: boolean;
   startedAt: number;
   endedAt: number | null;
   turns: Turn[];
@@ -35,13 +36,20 @@ function callKey(callSid: string) {
   return `sengoku:call:${callSid}`;
 }
 
-export async function createCall(callSid: string, from: string, to: string, blacklisted: boolean): Promise<CallRecord> {
+export async function createCall(
+  callSid: string,
+  from: string,
+  to: string,
+  blacklisted: boolean,
+  whitelisted = false
+): Promise<CallRecord> {
   const record: CallRecord = {
     callSid,
     from,
     to,
     status: "in-progress",
     blacklisted,
+    whitelisted,
     startedAt: Date.now(),
     endedAt: null,
     turns: [],

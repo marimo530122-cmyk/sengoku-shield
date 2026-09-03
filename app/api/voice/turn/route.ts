@@ -10,6 +10,7 @@ import { NextRequest } from "next/server";
 import { verifyTwilioRequest, parseTwilioForm } from "@/lib/twilio-verify";
 import { getCall, appendTurn, finishCall } from "@/lib/call-store";
 import { buildHoneypotPrompt } from "@/lib/honeypot-prompt";
+import { isRecentTurnAngry } from "@/lib/tone-detector";
 import { generateReply } from "@/lib/claude";
 import { xmlResponse, say, gatherSpeech, hangup } from "@/lib/twiml";
 
@@ -61,7 +62,10 @@ export async function POST(req: NextRequest) {
     return xmlResponse(say("お時間になりましたので、これで失礼いたします。") + hangup());
   }
 
-  const systemPrompt = buildHoneypotPrompt(record.blacklisted ? "honeypot" : "screening");
+  // Module 12: ブロックリスト一致の通話でだけ、相手が攻撃的になったら
+  // リバースメンタルケア口調に動的切り替え（screeningモードには適用しない）
+  const mode = record.blacklisted ? (isRecentTurnAngry(record.turns) ? "honeypot_reverse_care" : "honeypot") : "screening";
+  const systemPrompt = buildHoneypotPrompt(mode);
 
   let reply: string;
   try {
