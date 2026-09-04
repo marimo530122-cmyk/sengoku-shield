@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
-  matcher: ["/((?!api/voice|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api/voice|api/health|_next/static|_next/image|favicon.ico).*)"],
 };
 
 export function proxy(req: NextRequest) {
